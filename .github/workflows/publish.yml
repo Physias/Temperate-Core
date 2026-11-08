@@ -21,14 +21,13 @@ jobs:
       - name: Check out tagged source
         uses: actions/checkout@v7
 
-      - name: Read and verify release version
+      - name: Read release tag version
         id: release
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          MOD_VERSION="$(grep -E '^mod_version[[:space:]]*=' gradle.properties | head -n 1 | cut -d= -f2- | tr -d '[:space:]')"
-          if [[ -z "$VERSION" || "$VERSION" != "$MOD_VERSION" ]]; then
-            echo "Tag version '$VERSION' does not match gradle.properties mod_version '$MOD_VERSION'." >&2
+          if [[ "$GITHUB_REF_NAME" != v* || -z "$VERSION" ]]; then
+            echo "Expected a version tag such as v1.0.0, got '$GITHUB_REF_NAME'." >&2
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -60,9 +59,33 @@ jobs:
       - name: Build release JAR
         run: bash ./gradlew clean build --no-daemon
 
-      - name: Confirm distribution JAR exists
+      - name: Verify distribution JAR and embedded version
         shell: bash
-        run: test -f "build/libs/temperate_core-${{ steps.release.outputs.version }}.jar"
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          python3 - <<'PYCODE'
+          import json
+          import os
+          import zipfile
+          from pathlib import Path
+
+          version = os.environ['RELEASE_VERSION']
+          jar = Path(f'build/libs/temperate_core-{version}.jar')
+          if not jar.is_file():
+              raise SystemExit(f'Release JAR not found: {jar}')
+
+          with zipfile.ZipFile(jar) as archive:
+              metadata = json.loads(archive.read('fabric.mod.json'))
+          actual_id = metadata.get('id')
+          actual_version = metadata.get('version')
+          if actual_id != 'temperate_core' or actual_version != version:
+              raise SystemExit(
+                  f'Tag v{version} does not match {jar}: '
+                  f'id={actual_id}, version={actual_version}'
+              )
+          print(f'Validated {jar} (id={actual_id}, version={actual_version})')
+          PYCODE
 
       - name: Publish to GitHub, Modrinth and CurseForge
         uses: Kira-NT/mc-publish@v3

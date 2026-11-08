@@ -1,0 +1,31 @@
+{
+	"schemaVersion": 1,
+	"id": "temperate_core",
+	"version": "1.0.0",
+	"name": "Temperate Core",
+	"description": "An extensible temperature engine for Minecraft. Features thermal exposure, equipment protection, environmental effects and a dynamic visual HUD.",
+	"authors": [
+		"Physias"
+	],
+	"contact": {
+		"homepage": "",
+		"sources": ""
+	},
+	"license": "MIT",
+	"icon": "assets/temperate_core/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.tempcore.Temperate"
+		],
+		"client": [
+			"com.tempcore.client.TemperateClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.20.1",
+		"minecraft": "~26.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

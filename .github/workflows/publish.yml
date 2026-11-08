@@ -1,0 +1,90 @@
+name: Publish Temperate Core
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build and publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v7
+
+      - name: Read and verify release version
+        id: release
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          MOD_VERSION="$(grep -E '^mod_version[[:space:]]*=' gradle.properties | head -n 1 | cut -d= -f2- | tr -d '[:space:]')"
+          if [[ -z "$VERSION" || "$VERSION" != "$MOD_VERSION" ]]; then
+            echo "Tag version '$VERSION' does not match gradle.properties mod_version '$MOD_VERSION'." >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check publication configuration
+        shell: bash
+        env:
+          MODRINTH_PROJECT_ID: ${{ vars.MODRINTH_PROJECT_ID }}
+          CURSEFORGE_PROJECT_ID: ${{ vars.CURSEFORGE_PROJECT_ID }}
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+          CURSEFORGE_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
+        run: |
+          for variable in MODRINTH_PROJECT_ID CURSEFORGE_PROJECT_ID MODRINTH_TOKEN CURSEFORGE_TOKEN; do
+            if [[ -z "${!variable}" ]]; then
+              echo "Missing GitHub Actions variable or secret: $variable" >&2
+              exit 1
+            fi
+          done
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build release JAR
+        run: bash ./gradlew clean build --no-daemon
+
+      - name: Confirm distribution JAR exists
+        shell: bash
+        run: test -f "build/libs/temperate_core-${{ steps.release.outputs.version }}.jar"
+
+      - name: Publish to GitHub, Modrinth and CurseForge
+        uses: Kira-NT/mc-publish@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-tag: ${{ github.ref_name }}
+          github-prerelease: false
+
+          modrinth-id: ${{ vars.MODRINTH_PROJECT_ID }}
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+
+          curseforge-id: ${{ vars.CURSEFORGE_PROJECT_ID }}
+          curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
+
+          files: build/libs/temperate_core-${{ steps.release.outputs.version }}.jar
+          name: Temperate Core ${{ steps.release.outputs.version }} — Minecraft 26.3
+          version: ${{ steps.release.outputs.version }}
+          version-type: release
+          changelog-file: CHANGELOG.md
+          loaders: fabric
+          game-versions: '26.3'
+          environment: client | server
+          java: '25'
+          dependencies: |
+            fabric(required){modrinth:P7dR8mSH}{curseforge:306612}#(ignore:github)

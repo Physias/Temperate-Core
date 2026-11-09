@@ -6,46 +6,36 @@ on:
       - 'v*'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: temperate-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  publish:
-    name: Build and publish
+  build:
+    name: Build and validate release JAR
     runs-on: ubuntu-latest
-
+    outputs:
+      version: ${{ steps.release.outputs.version }}
     steps:
       - name: Check out tagged source
         uses: actions/checkout@v7
 
-      - name: Read release tag version
+      - name: Validate tag and release notes
         id: release
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          if [[ "$GITHUB_REF_NAME" != v* || -z "$VERSION" ]]; then
-            echo "Expected a version tag such as v1.0.0, got '$GITHUB_REF_NAME'." >&2
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "Expected a version tag such as v1.0.2, got '$GITHUB_REF_NAME'." >&2
+            exit 1
+          fi
+          VERSION="${BASH_REMATCH[1]}"
+          if ! grep -Fq "Temperate Core ${VERSION}" RELEASE_NOTES.md; then
+            echo "RELEASE_NOTES.md does not match version ${VERSION}." >&2
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Check publication configuration
-        shell: bash
-        env:
-          MODRINTH_PROJECT_ID: ${{ vars.MODRINTH_PROJECT_ID }}
-          CURSEFORGE_PROJECT_ID: ${{ vars.CURSEFORGE_PROJECT_ID }}
-          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
-          CURSEFORGE_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
-        run: |
-          for variable in MODRINTH_PROJECT_ID CURSEFORGE_PROJECT_ID MODRINTH_TOKEN CURSEFORGE_TOKEN; do
-            if [[ -z "${!variable}" ]]; then
-              echo "Missing GitHub Actions variable or secret: $variable" >&2
-              exit 1
-            fi
-          done
 
       - name: Set up Java 25
         uses: actions/setup-java@v6
@@ -56,15 +46,16 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Build release JAR
+      - name: Build distribution JAR
         run: bash ./gradlew clean build --no-daemon
 
-      - name: Verify distribution JAR and embedded version
+      - name: Verify JAR metadata and compute checksum
         shell: bash
         env:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: |
           python3 - <<'PYCODE'
+          import hashlib
           import json
           import os
           import zipfile
@@ -74,35 +65,84 @@ jobs:
           jar = Path(f'build/libs/temperate_core-{version}.jar')
           if not jar.is_file():
               raise SystemExit(f'Release JAR not found: {jar}')
-
           with zipfile.ZipFile(jar) as archive:
               metadata = json.loads(archive.read('fabric.mod.json'))
-          actual_id = metadata.get('id')
-          actual_version = metadata.get('version')
-          if actual_id != 'temperate_core' or actual_version != version:
+              if archive.testzip() is not None:
+                  raise SystemExit('JAR ZIP integrity check failed')
+          if metadata.get('id') != 'temperate_core' or metadata.get('version') != version:
               raise SystemExit(
-                  f'Tag v{version} does not match {jar}: '
-                  f'id={actual_id}, version={actual_version}'
+                  f"Version mismatch: expected temperate_core {version}, "
+                  f"found {metadata.get('id')} {metadata.get('version')}"
               )
-          print(f'Validated {jar} (id={actual_id}, version={actual_version})')
+          digest = hashlib.sha256(jar.read_bytes()).hexdigest()
+          print(f'Validated {jar} | SHA256: {digest}')
           PYCODE
 
-      - name: Publish to GitHub, Modrinth and CurseForge
+      - name: Share the exact JAR with all publishing jobs
+        uses: actions/upload-artifact@v7
+        with:
+          name: temperate-core-distribution
+          path: build/libs/temperate_core-${{ steps.release.outputs.version }}.jar
+          if-no-files-found: error
+          retention-days: 30
+
+  github:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out release notes
+        uses: actions/checkout@v7
+      - name: Download validated JAR
+        uses: actions/download-artifact@v7
+        with:
+          name: temperate-core-distribution
+          path: release
+      - name: Publish to GitHub Releases
         uses: Kira-NT/mc-publish@v3
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           github-tag: ${{ github.ref_name }}
           github-prerelease: false
+          github-draft: false
+          files: release/temperate_core-${{ needs.build.outputs.version }}.jar
+          name: Temperate Core ${{ needs.build.outputs.version }} — Minecraft 26.3
+          version: ${{ needs.build.outputs.version }}
+          version-type: release
+          changelog-file: RELEASE_NOTES.md
 
+  modrinth:
+    name: Publish Modrinth version
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release notes
+        uses: actions/checkout@v7
+      - name: Download validated JAR
+        uses: actions/download-artifact@v7
+        with:
+          name: temperate-core-distribution
+          path: release
+      - name: Check Modrinth configuration
+        shell: bash
+        env:
+          PROJECT_ID: ${{ vars.MODRINTH_PROJECT_ID }}
+          API_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+        run: |
+          test -n "$PROJECT_ID" || { echo "MODRINTH_PROJECT_ID is missing" >&2; exit 1; }
+          test -n "$API_TOKEN" || { echo "MODRINTH_TOKEN is missing" >&2; exit 1; }
+      - name: Publish to Modrinth (without editing older versions)
+        uses: Kira-NT/mc-publish@v3
+        with:
           modrinth-id: ${{ vars.MODRINTH_PROJECT_ID }}
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
-
-          curseforge-id: ${{ vars.CURSEFORGE_PROJECT_ID }}
-          curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
-
-          files: build/libs/temperate_core-${{ steps.release.outputs.version }}.jar
-          name: Temperate Core ${{ steps.release.outputs.version }} — Minecraft 26.3
-          version: ${{ steps.release.outputs.version }}
+          modrinth-featured: true
+          modrinth-unfeature-mode: none
+          files: release/temperate_core-${{ needs.build.outputs.version }}.jar
+          name: Temperate Core ${{ needs.build.outputs.version }} — Minecraft 26.3
+          version: ${{ needs.build.outputs.version }}
           version-type: release
           changelog-file: RELEASE_NOTES.md
           loaders: fabric
@@ -110,4 +150,41 @@ jobs:
           environment: client | server
           java: '25'
           dependencies: |
-            fabric(required){modrinth:P7dR8mSH}{curseforge:306612}#(ignore:github)
+            fabric(required){modrinth:P7dR8mSH}
+
+  curseforge:
+    name: Publish CurseForge file
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release notes
+        uses: actions/checkout@v7
+      - name: Download validated JAR
+        uses: actions/download-artifact@v7
+        with:
+          name: temperate-core-distribution
+          path: release
+      - name: Check CurseForge configuration
+        shell: bash
+        env:
+          PROJECT_ID: ${{ vars.CURSEFORGE_PROJECT_ID }}
+          API_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
+        run: |
+          test -n "$PROJECT_ID" || { echo "CURSEFORGE_PROJECT_ID is missing" >&2; exit 1; }
+          test -n "$API_TOKEN" || { echo "CURSEFORGE_TOKEN is missing" >&2; exit 1; }
+      - name: Publish to CurseForge
+        uses: Kira-NT/mc-publish@v3
+        with:
+          curseforge-id: ${{ vars.CURSEFORGE_PROJECT_ID }}
+          curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
+          files: release/temperate_core-${{ needs.build.outputs.version }}.jar
+          name: Temperate Core ${{ needs.build.outputs.version }} — Minecraft 26.3
+          version: ${{ needs.build.outputs.version }}
+          version-type: release
+          changelog-file: RELEASE_NOTES.md
+          loaders: fabric
+          game-versions: '26.3'
+          environment: client | server
+          java: '25'
+          dependencies: |
+            fabric(required){curseforge:306612}

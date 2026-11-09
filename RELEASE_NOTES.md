@@ -1,17 +1,22 @@
-# Temperate Core 1.0.1 — Thermal Effects Hotfix
+# Temperate Core 1.0.2 — Heat Effects Hotfix
 
-This maintenance update fixes a missing cold-exposure effect in Temperate Core.
+This maintenance release corrects the effects applied during severe heat exposure.
 
 ## Fixed
 
-- Corrected the `COLD_I` registration in `TemperatureEffects`, restoring **Slowness I** after 15 seconds of level I cold exposure.
-- Removed an incorrect duplicate `COLD_II` mapping that prevented the level I cold effect from being registered.
+- Fixed the `HOT_III` effect mapping: level III heat exposure now applies **Hunger II and Slowness I**, as intended.
+- Replaced the duplicate Hunger effect (`Hunger II + Hunger I`) with the correct Slowness effect.
+
+## Technical
+
+- Improved the GitHub Actions release workflow by building the distribution JAR once and publishing it through independent GitHub, Modrinth, and CurseForge jobs.
+- Disabled automatic unfeaturing of older Modrinth versions to avoid the version-edit authorization failure observed during the 1.0.1 release.
 
 ## Compatibility
 
 - Minecraft Java Edition **26.3**
 - Fabric Loader **0.20.1+** and compatible Fabric API
-- **Java 25+**
-- No changes to thermal thresholds, armor statistics, exposure persistence, or the HUD.
+- Java **25+**
+- No intentional changes to temperature thresholds, equipment statistics, player exposure persistence, or the visual HUD.
 
-**Testing note:** Multiplayer and third-party addon compatibility have not yet been fully validated.
+**Testing note:** Multiplayer behavior and third-party addon compatibility have not yet been fully validated.

@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.2 — Heat Effects Hotfix (2026-11-09)
+
+### Fixed
+
+- Corrected `HOT_III` effects to apply **Hunger II + Slowness I**, replacing the unintended **Hunger II + Hunger I** combination.
+
+### Release automation
+
+- Reorganized the publish workflow into one shared build and three independent publishing jobs (GitHub Releases, Modrinth and CurseForge).
+- Disabled automatic editing/unfeaturing of older Modrinth versions to avoid a `401 Unauthorized` error with limited-scope API tokens.
+
+### Compatibility
+
+- Minecraft Java 26.3 · Fabric Loader 0.20.1+ · compatible Fabric API · Java 25+
+- No intended changes to thermal thresholds, equipment statistics, exposure persistence, or HUD.
+- Multiplayer and independent addon integration remain to be fully tested.
+
+---
+
 ## 1.0.1 — Thermal Effects Hotfix (2026-11-09)
 
 ### Fixed

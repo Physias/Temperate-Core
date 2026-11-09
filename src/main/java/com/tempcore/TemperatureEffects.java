@@ -39,7 +39,7 @@ public final class TemperatureEffects {
         //Hot States
         STATE_EFFECTS.put(ThermalState.HOT_I, List.of(hungerI));
         STATE_EFFECTS.put(ThermalState.HOT_II, List.of(hungerI, slownessI));
-        STATE_EFFECTS.put(ThermalState.HOT_III, List.of(hungerII, hungerI));
+        STATE_EFFECTS.put(ThermalState.HOT_III, List.of(hungerII, slownessI));
     }
 
     //Apply effects associated with thermal state

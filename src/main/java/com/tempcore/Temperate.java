@@ -26,7 +26,7 @@ public final class Temperate implements ModInitializer {
 	@Override
 	public void onInitialize() {
 
-		LOGGER.info("Temperate 1.0 Enabled");
+		LOGGER.info("Temperate 1.0.1 Enabled");
 
 		//Register thermal HUD networking
 		PayloadTypeRegistry.clientboundPlay().register(ThermalHudPayload.TYPE, ThermalHudPayload.CODEC);

@@ -1,7 +1,7 @@
 {
 	"schemaVersion": 1,
 	"id": "temperate_core",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"name": "Temperate Core",
 	"description": "An extensible temperature engine for Minecraft. Features thermal exposure, equipment protection, environmental effects and a dynamic visual HUD.",
 	"authors": [

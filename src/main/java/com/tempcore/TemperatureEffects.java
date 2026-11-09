@@ -32,7 +32,7 @@ public final class TemperatureEffects {
         MobEffectInstance hungerII = new MobEffectInstance(MobEffects.HUNGER, EFFECT_DURATION, 1, false, false);
 
         //Cold states
-        STATE_EFFECTS.put(ThermalState.COLD_II, List.of(slownessI));
+        STATE_EFFECTS.put(ThermalState.COLD_I, List.of(slownessI));
         STATE_EFFECTS.put(ThermalState.COLD_II, List.of(slownessI, weaknessI));
         STATE_EFFECTS.put(ThermalState.COLD_III, List.of(slownessII,  weaknessI));
 

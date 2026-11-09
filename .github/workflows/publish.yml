@@ -104,7 +104,7 @@ jobs:
           name: Temperate Core ${{ steps.release.outputs.version }} — Minecraft 26.3
           version: ${{ steps.release.outputs.version }}
           version-type: release
-          changelog-file: CHANGELOG.md
+          changelog-file: RELEASE_NOTES.md
           loaders: fabric
           game-versions: '26.3'
           environment: client | server

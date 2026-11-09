@@ -1,4 +1,21 @@
-# Temperate Core 1.0.0 — Initial Release
+# Changelog
+
+## 1.0.1 — Thermal Effects Hotfix (2026-11-09)
+
+### Fixed
+
+- Fixed the `COLD_I` effect mapping in `TemperatureEffects`: level I cold exposure now applies **Slowness I** after the 15-second exposure threshold, as intended.
+- Corrected the duplicate `COLD_II` registry key that previously left `COLD_I` without an assigned effect.
+
+### Compatibility
+
+- Minecraft Java 26.3 · Fabric Loader 0.20.1+ · compatible Fabric API · Java 25+
+- No changes to the thermal thresholds, armor statistics, exposure persistence, or visual HUD.
+- Multiplayer and third-party addon compatibility have not yet been fully validated.
+
+---
+
+## 1.0.0 — Initial Release
 
 The first public release of Temperate Core, a lightweight, extensible temperature engine for Minecraft Java 26.3 (Fabric).
 

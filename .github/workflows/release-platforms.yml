@@ -1,0 +1,214 @@
+name: Release Temperate Core - Modrinth and CurseForge
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Existing GitHub Release version, e.g. 1.0.3 (without v)'
+        type: string
+        required: true
+      destination:
+        description: 'Publish only on platforms that do not already have this version'
+        type: choice
+        required: true
+        default: both
+        options:
+          - both
+          - modrinth
+          - curseforge
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temperate-platforms-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Verify existing GitHub Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.verify.outputs.version }}
+    steps:
+      - name: Check version, published release, and JAR asset
+        id: verify
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Enter a version like 1.0.3, without the v prefix." >&2
+            exit 1
+          fi
+          TAG="v$RELEASE_VERSION"
+          JAR="temperate_core-${RELEASE_VERSION}.jar"
+          if [[ "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" != 'false' ]]; then
+            echo "GitHub Release $TAG must be published before distribution." >&2
+            exit 1
+          fi
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -Fxq "$JAR"; then
+            echo "Missing GitHub Release asset $JAR" >&2
+            exit 1
+          fi
+          echo "version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+
+  modrinth:
+    name: Publish to Modrinth
+    needs: preflight
+    if: ${{ inputs.destination == 'both' || inputs.destination == 'modrinth' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tagged release notes
+        uses: actions/checkout@v7
+        with:
+          ref: v${{ needs.preflight.outputs.version }}
+
+      - name: Download GitHub Release JAR and checksum
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          JAR="temperate_core-${RELEASE_VERSION}.jar"
+          gh release download "v${RELEASE_VERSION}" \
+            --repo "$GITHUB_REPOSITORY" --pattern "$JAR" --pattern "$JAR.sha256" --dir release
+
+      - name: Verify downloaded JAR and notes
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, zipfile
+          from pathlib import Path
+          version = os.environ['RELEASE_VERSION']
+          jar = Path(f'release/temperate_core-{version}.jar')
+          if not jar.is_file():
+              raise SystemExit(f'Missing {jar}')
+          with zipfile.ZipFile(jar) as z:
+              if z.testzip() is not None:
+                  raise SystemExit('Corrupt JAR')
+              metadata = json.loads(z.read('fabric.mod.json'))
+          if (metadata.get('id'), metadata.get('version')) != ('temperate_core', version):
+              raise SystemExit('Unexpected mod ID or version')
+          checksum = jar.with_suffix('.jar.sha256')
+          if checksum.exists():
+              expected = checksum.read_text(encoding='utf-8').split()[0]
+              actual = hashlib.sha256(jar.read_bytes()).hexdigest()
+              if actual != expected:
+                  raise SystemExit('SHA-256 does not match GitHub Release checksum')
+          if f'Temperate Core {version}' not in Path('RELEASE_NOTES.md').read_text(encoding='utf-8'):
+              raise SystemExit('RELEASE_NOTES.md does not match version')
+          print(f'Validated GitHub Release JAR for {version}')
+          PY
+
+      - name: Confirm Modrinth credentials exist
+        shell: bash
+        env:
+          PROJECT_ID: ${{ vars.MODRINTH_PROJECT_ID }}
+          API_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+        run: |
+          test -n "$PROJECT_ID" && test -n "$API_TOKEN" || { echo 'Missing Modrinth repository secret or variable' >&2; exit 1; }
+
+      - name: Publish to Modrinth
+        uses: Kira-NT/mc-publish@v3
+        with:
+          modrinth-id: ${{ vars.MODRINTH_PROJECT_ID }}
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          modrinth-featured: false
+          modrinth-unfeature-mode: none
+          files: release/temperate_core-${{ needs.preflight.outputs.version }}.jar
+          name: Temperate Core ${{ needs.preflight.outputs.version }} - Minecraft 26.3
+          version: ${{ needs.preflight.outputs.version }}
+          version-type: release
+          changelog-file: RELEASE_NOTES.md
+          loaders: fabric
+          game-versions: '26.3'
+          environment: client | server
+          java: '25'
+          dependencies: |
+            fabric(required){modrinth:P7dR8mSH}
+
+  curseforge:
+    name: Publish to CurseForge
+    needs: preflight
+    if: ${{ inputs.destination == 'both' || inputs.destination == 'curseforge' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tagged release notes
+        uses: actions/checkout@v7
+        with:
+          ref: v${{ needs.preflight.outputs.version }}
+
+      - name: Download GitHub Release JAR and checksum
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          JAR="temperate_core-${RELEASE_VERSION}.jar"
+          gh release download "v${RELEASE_VERSION}" \
+            --repo "$GITHUB_REPOSITORY" --pattern "$JAR" --pattern "$JAR.sha256" --dir release
+
+      - name: Verify downloaded JAR and notes
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, zipfile
+          from pathlib import Path
+          version = os.environ['RELEASE_VERSION']
+          jar = Path(f'release/temperate_core-{version}.jar')
+          if not jar.is_file():
+              raise SystemExit(f'Missing {jar}')
+          with zipfile.ZipFile(jar) as z:
+              if z.testzip() is not None:
+                  raise SystemExit('Corrupt JAR')
+              metadata = json.loads(z.read('fabric.mod.json'))
+          if (metadata.get('id'), metadata.get('version')) != ('temperate_core', version):
+              raise SystemExit('Unexpected mod ID or version')
+          checksum = jar.with_suffix('.jar.sha256')
+          if checksum.exists():
+              expected = checksum.read_text(encoding='utf-8').split()[0]
+              actual = hashlib.sha256(jar.read_bytes()).hexdigest()
+              if actual != expected:
+                  raise SystemExit('SHA-256 does not match GitHub Release checksum')
+          if f'Temperate Core {version}' not in Path('RELEASE_NOTES.md').read_text(encoding='utf-8'):
+              raise SystemExit('RELEASE_NOTES.md does not match version')
+          print(f'Validated GitHub Release JAR for {version}')
+          PY
+
+      - name: Confirm CurseForge credentials exist
+        shell: bash
+        env:
+          PROJECT_ID: ${{ vars.CURSEFORGE_PROJECT_ID }}
+          API_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
+        run: |
+          test -n "$PROJECT_ID" && test -n "$API_TOKEN" || { echo 'Missing CurseForge repository secret or variable' >&2; exit 1; }
+
+      - name: Publish to CurseForge
+        uses: Kira-NT/mc-publish@v3
+        with:
+          curseforge-id: ${{ vars.CURSEFORGE_PROJECT_ID }}
+          curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
+          files: release/temperate_core-${{ needs.preflight.outputs.version }}.jar
+          name: Temperate Core ${{ needs.preflight.outputs.version }} - Minecraft 26.3
+          version: ${{ needs.preflight.outputs.version }}
+          version-type: release
+          changelog-file: RELEASE_NOTES.md
+          loaders: fabric
+          game-versions: '26.3'
+          environment: client | server
+          java: '25'
+          dependencies: |
+            fabric(required){curseforge:306612}
